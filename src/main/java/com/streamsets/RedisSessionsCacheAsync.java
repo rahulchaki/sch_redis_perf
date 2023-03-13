@@ -10,6 +10,7 @@
 //import java.util.Collection;
 //import java.util.Collections;
 //import java.util.List;
+//import java.util.Optional;
 //import java.util.concurrent.Callable;
 //import java.util.concurrent.TimeUnit;
 //
@@ -46,9 +47,9 @@
 //    }
 //
 //    @Override
-//    public Mono<SSOPrincipal> validateAndUpdateLastActivity(String sessionHashId, Callable<SSOPrincipal> validateFromDB, Callable<Boolean> updateMainDB ){
-//        SSOPrincipal principal;
-//        List<?> responses = new RBatchExecutor()
+//    public Mono<Optional<SSOPrincipal>> validateAndUpdateLastActivity(String sessionHashId, Callable<SSOPrincipal> validateFromDB, Callable<Boolean> updateMainDB ){
+//
+//        new RBatchExecutor()
 //                .execute( (invalidTokens, principals, lastActivity, dbUpdated) ->
 //                        {
 //                            invalidTokens.containsAsync(sessionHashId);
@@ -56,7 +57,50 @@
 //                            lastActivity.fastPutAsync( sessionHashId, System.currentTimeMillis());
 //                            dbUpdated.containsAsync(sessionHashId);
 //                        }
-//                );
+//                )
+//                .flatMap( responses -> {
+//                    SSOPrincipal principal;
+//                    boolean isInvalid = (Boolean) responses.get(0);
+//                    String principalJson = (String) responses.get(1);
+//                    boolean lastActivityUpdated = (Boolean) responses.get(2);
+//                    boolean isDBUpdated = (Boolean) responses.get(3);
+//                    if( isInvalid ){
+//                        return Mono.just( Optional.empty() );
+//                    }
+//                    else if( principalJson != null ){
+//                        principal = principalCodec.fromString( principalJson );
+//                        if( !isDBUpdated ){
+//                            boolean dbUpdated;
+//                            try{
+//                                dbUpdated = updateMainDB.call();
+//                            } catch( Exception e ){
+//                                dbUpdated = false;
+//                            }
+//                            if( dbUpdated ){
+//                                new RBatchExecutor()
+//                                        .execute( (invalidTokens, principals, lastActivity, dbUpdatedCache) ->
+//                                                dbUpdatedCache.addAsync(sessionHashId, 1, TimeUnit.MINUTES)
+//                                        );
+//                            }
+//                        }
+//
+//                    }
+//                    else{
+//                        try{
+//                            principal = validateFromDB.call();
+//                            if( principal != null ){
+//                                this.cache( sessionHashId, principal );
+//                            }
+//                            else{
+//                                this.invalidate( Collections.singletonList( sessionHashId ));
+//                            }
+//                        } catch ( Exception e){
+//                            principal = null;
+//                        }
+//
+//                    }
+//
+//                })
 //        boolean isInvalid = (Boolean) responses.get(0);
 //        String principalJson = (String) responses.get(1);
 //        boolean lastActivityUpdated = (Boolean) responses.get(2);

@@ -24,15 +24,7 @@ class TokensState {
 
 
   def setUpRedisson(): RedissonClient = {
-    val config = new Config
-    val redis = conf.redis
-    config
-      .setNettyThreads( conf.redis.threads)
-      .useSingleServer
-      .setAddress("redis://" + redis.host + ":" + redis.port)
-      .setConnectionMinimumIdleSize( redis.pool / 2)
-      .setConnectionPoolSize( redis.pool)
-    Redisson.create(config)
+    RedisUtils.setUpRedisson( conf)
   }
 
 

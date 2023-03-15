@@ -41,15 +41,7 @@ public class Main implements ApplicationRunner {
     @Bean
     @Scope(value = ConfigurableBeanFactory.SCOPE_SINGLETON)
     public RedissonClient getRedisClient() {
-        Config config = new Config();
-        RedisConf redis = getAppConf().redis();
-        config
-                .setNettyThreads( redis.threads())
-                .useSingleServer()
-                .setAddress("redis://"+redis.host() + ":"+redis.port())
-                .setConnectionMinimumIdleSize( redis.pool() / 2)
-                .setConnectionPoolSize(redis.pool());
-        return Redisson.create(config);
+        return RedisUtils$.MODULE$.setUpRedisson( getAppConf());
     }
 
     @Bean

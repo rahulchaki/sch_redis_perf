@@ -13,14 +13,7 @@ object TestMain extends App {
 
 
   def setUpRedisson(): RedissonClient = {
-    val config = new Config
-    val redis = conf.redis
-    config
-      .setNettyThreads( conf.redis.threads)
-      .useSingleServer
-      .setAddress("redis://" + redis.host + ":" + redis.port)
-    .setConnectionPoolSize( redis.pool)
-    Redisson.create(config)
+    RedisUtils.setUpRedisson( conf )
   }
 
 

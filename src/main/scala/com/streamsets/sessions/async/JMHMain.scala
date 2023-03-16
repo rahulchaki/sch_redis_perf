@@ -10,8 +10,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder
 import org.redisson.api.RedissonReactiveClient
 import reactor.core.publisher.Flux
 
+import java.nio.file.{Files, Paths}
 import java.util
 import java.util.concurrent.{ThreadLocalRandom, TimeUnit}
+import scala.io.Source
 import scala.jdk.CollectionConverters._
 
 @State( Scope.Benchmark)
@@ -40,11 +42,21 @@ class TokensStateAsync {
 
   @Setup(Level.Trial)
   def setup(): Unit = {
-    println("Fetching tokens .")
     val now = System.currentTimeMillis()
-    val keys = sessionManager.allTokens().toFuture.get()
+    val del = "###"
+    val keys = if( Files.exists(Paths.get("tokens.list")) ){
+      println("Loading tokens from file.")
+      val all = Source.fromFile("tokens.list").mkString.split(del).toList
+      println(s"Loaded ${all.size} tokens from file in ${ System.currentTimeMillis() - now} ms.")
+      all
+    }else{
+      println("Fetching tokens from Redis.")
+      val all = sessionManager.allTokens().toFuture.get().toList
+      Files.writeString( Paths.get("tokens.list"), all.mkString(del))
+      println(s"Fetched ${all.size} tokens from Redis in ${ System.currentTimeMillis() - now} ms.")
+      all
+    }
     tokens.addAll( keys.asJava )
-    println(s"Fetched ${tokens.size} tokens in ${ System.currentTimeMillis() - now} ms.")
     val token = tokens.get(0)
     val tokenStr = sessionManager.validate( token ).toFuture.get().map(_.getTokenStr).getOrElse("")
     println(s" Test validate $token  $tokenStr ${DigestUtils.sha256Hex(tokenStr).equals(token)}");

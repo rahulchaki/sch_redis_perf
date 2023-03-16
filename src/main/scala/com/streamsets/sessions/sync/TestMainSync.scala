@@ -1,11 +1,9 @@
-package com.streamsets
+package com.streamsets.sessions.sync
 
-import org.apache.commons.codec.digest.DigestUtils
-import org.redisson.Redisson
+import com.streamsets.{RedisUtils, Settings, TestSessions}
 import org.redisson.api.RedissonClient
-import org.redisson.config.Config
 
-object TestMain extends App {
+object TestMainSync extends App {
 
   val conf = Settings.load()
   val redisson = setUpRedisson()
@@ -22,11 +20,8 @@ object TestMain extends App {
     new StreamSetsSessionsManager(sessionsCache)
   }
 
-  def test(): Boolean = {
-    val state = new TokensState
-    val token = state.sessionManager.createSession(600000)
-    val tokenStr = state.sessionManager.validate(token).map(_.getTokenStr).getOrElse("")
-    DigestUtils.sha256Hex(tokenStr).equals(token)
+  def test(): Unit = {
+    TestSessions.sync( sessionManager )
   }
 
   println(test())

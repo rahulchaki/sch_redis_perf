@@ -1,9 +1,15 @@
 package com.streamsets;
 
 
-import org.redisson.Redisson;
+import com.streamsets.sessions.async.RedisSessionsCacheAsync;
+import com.streamsets.sessions.async.SessionManagerAsync;
+import com.streamsets.sessions.async.SessionsCacheAsync;
+import com.streamsets.sessions.async.StreamSetsSessionsManagerAsync;
+import com.streamsets.sessions.sync.RedisSessionsCache;
+import com.streamsets.sessions.sync.SessionManager;
+import com.streamsets.sessions.sync.SessionsCache;
+import com.streamsets.sessions.sync.StreamSetsSessionsManager;
 import org.redisson.api.RedissonClient;
-import org.redisson.config.Config;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -13,7 +19,6 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Scope;
-import scala.Option;
 
 @SpringBootApplication
 public class Main implements ApplicationRunner {
@@ -52,15 +57,19 @@ public class Main implements ApplicationRunner {
         //return new NoOpSessionManager();
     }
 
+    @Bean
+    @Scope(value = ConfigurableBeanFactory.SCOPE_SINGLETON)
+    public SessionManagerAsync getSessionManagerAsync() {
+        SessionsCacheAsync sessionsCache = new RedisSessionsCacheAsync(getRedisClient().reactive());
+        return new StreamSetsSessionsManagerAsync(sessionsCache);
+    }
+
+
     @Override
     public void run(ApplicationArguments args) throws Exception {
-        System.out.println(" Testing sch redis............ ");
-        SessionManager sessionManager = this.getSessionManager();
-        String token = sessionManager.createSession( 60000);
-        System.out.println(" Created session with token "+token);
-        Option<SSOPrincipal> principal = sessionManager.validate( token );
-        System.out.println(" Validated token with result " + principal.isDefined());
-        boolean result = sessionManager.invalidate( token );
-        System.out.println(" Invalidated token with result " + result);
+        SessionManager sync = getSessionManager();
+        SessionManagerAsync async = getSessionManagerAsync();
+        TestSessions$.MODULE$.sync( sync);
+        TestSessions$.MODULE$.async( async );
     }
 }

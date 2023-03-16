@@ -1,10 +1,9 @@
 package com.streamsets
 
-import com.streamsets.TestMain.conf
 import org.redisson.Redisson
 import org.redisson.api.RedissonClient
 import org.redisson.config.{Config, ReadMode}
-import org.redisson.connection.balancer.{LoadBalancer, RandomLoadBalancer, WeightedRoundRobinBalancer}
+import org.redisson.connection.balancer.RandomLoadBalancer
 
 object RedisUtils {
   def setUpRedisson( conf: AppConf ): RedissonClient = {

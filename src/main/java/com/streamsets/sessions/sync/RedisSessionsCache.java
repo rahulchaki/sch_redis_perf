@@ -1,7 +1,10 @@
-package com.streamsets;
+package com.streamsets.sessions.sync;
 
 
 import com.google.gson.Gson;
+import com.streamsets.sessions.SSOPrincipal;
+import com.streamsets.sessions.SSOPrincipalJson;
+import com.streamsets.sessions.async.RedisSessionsCacheAsync;
 import org.redisson.api.*;
 import org.redisson.client.codec.LongCodec;
 import org.redisson.client.codec.StringCodec;
@@ -9,6 +12,7 @@ import org.redisson.client.codec.StringCodec;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
@@ -19,6 +23,25 @@ public class RedisSessionsCache implements SessionsCache {
     public RedisSessionsCache( RedissonClient redisson ) {
         this.redisson = redisson;
         this.principalCodec = new PrincipalCodecImpl();
+    }
+
+    @Override
+    public void cacheAll(Map<String, SSOPrincipal> sessions) {
+        new RBatchExecutor()
+                .execute( (invalidTokens, principals, lastActivity, dbUpdated) ->
+                        {
+                            for( Map.Entry<String, SSOPrincipal> entry: sessions.entrySet() ){
+                                String sessionHashId = entry.getKey();
+                                SSOPrincipal principal = entry.getValue();
+                                invalidTokens.removeAsync(sessionHashId);
+                                principals.fastPutAsync(sessionHashId, principalCodec.toString( (SSOPrincipalJson) principal));
+                                lastActivity.fastPutAsync( sessionHashId, System.currentTimeMillis());
+                                dbUpdated.addAsync(sessionHashId,  10, TimeUnit.MINUTES);
+                            }
+
+
+                        }
+                );
     }
 
     @Override

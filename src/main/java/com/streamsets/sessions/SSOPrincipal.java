@@ -1,4 +1,4 @@
-package com.streamsets;
+package com.streamsets.sessions;
 
 
 import java.security.Principal;

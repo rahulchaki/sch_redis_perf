@@ -103,7 +103,7 @@ public class RedisSessionsCacheAsync implements SessionsCacheAsync {
                             if( dbUpdated ){
                                 return new RBatchExecutor()
                                         .execute( (invalidTokens, principals, lastActivity, dbUpdatedCache) ->
-                                                dbUpdatedCache.add(sessionHashId, 1, TimeUnit.MINUTES)
+                                                dbUpdatedCache.add(sessionHashId, 10, TimeUnit.MINUTES)
                                         )
                                         .map( tmp -> Optional.of(principal));
                             }

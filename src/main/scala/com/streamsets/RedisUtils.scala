@@ -16,7 +16,7 @@ object RedisUtils {
           .useMasterSlaveServers()
           .setMasterAddress("redis://" + redis.primary.host + ":" + redis.primary.port)
           .addSlaveAddress( "redis://" + replica.host + ":" + replica.port)
-          .setReadMode( ReadMode.MASTER_SLAVE )
+          .setReadMode( ReadMode.SLAVE )
           .setLoadBalancer( new RandomLoadBalancer())
           .setMasterConnectionMinimumIdleSize(redis.pool/4)
           .setSlaveConnectionMinimumIdleSize(redis.pool/4)

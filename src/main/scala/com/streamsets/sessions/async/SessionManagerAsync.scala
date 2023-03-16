@@ -9,6 +9,9 @@ import java.util.Collections
 import scala.jdk.CollectionConverters._
 
 trait SessionManagerAsync {
+
+  def allTokens(): Mono[ Set[ String ] ]
+  def createSessions(num: Int, expiresIn: Long): Mono[List[String]]
   def createSession( expiresIn: Long ): Mono[String]
 
   def validate( token: String ): Mono[Option[SSOPrincipal]]
@@ -20,7 +23,9 @@ trait SessionManagerAsync {
 
 class StreamSetsSessionsManagerAsync(sessionsCache: SessionsCacheAsync ) extends SessionManagerAsync {
 
-  def createSessions(num: Int, expiresIn: Long): Mono[List[String]] = {
+
+
+  override def createSessions(num: Int, expiresIn: Long): Mono[List[String]] = {
     val sessions = new util.HashMap[String, SSOPrincipal]()
     ( 0 until num ).foreach{ _ =>
       val principal = SessionManager.newPrincipal(expiresIn)
@@ -55,5 +60,9 @@ class StreamSetsSessionsManagerAsync(sessionsCache: SessionsCacheAsync ) extends
       .invalidate( Collections.singletonList( token ) )
       .collectList()
       .map( _.get(0).toString)
+  }
+
+  override def allTokens(): Mono[Set[String]] = {
+    sessionsCache.allTokens().map( _.asScala.toSet )
   }
 }

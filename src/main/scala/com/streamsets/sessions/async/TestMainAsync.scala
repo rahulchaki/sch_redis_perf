@@ -24,7 +24,14 @@ object TestMainAsync extends App {
     TestSessions.async( sessionManager )
   }
 
-  println(test())
+  def createTokens(): Unit = {
+    redisson.getKeys.flushall().toFuture.get()
+    TestSessions.createTokens( 1000000, 10000, sessionManager)
+    val numKeys = redisson.getKeys.count().toFuture.get()
+    println(s" $numKeys tokens created ")
+  }
+
+  createTokens()
 
   redisson.shutdown()
 

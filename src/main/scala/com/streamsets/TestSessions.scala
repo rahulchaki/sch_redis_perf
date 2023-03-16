@@ -3,8 +3,11 @@ package com.streamsets
 import com.streamsets.sessions.async.SessionManagerAsync
 import com.streamsets.sessions.sync.SessionManager
 import org.apache.commons.codec.digest.DigestUtils
+import reactor.core.publisher.Flux
 
 import java.util.concurrent.TimeUnit
+import scala.jdk.CollectionConverters._
+
 
 object TestSessions {
 
@@ -41,6 +44,20 @@ object TestSessions {
     println(s" Token : $token  tokenStr $tokenStr result ${DigestUtils.sha256Hex(tokenStr).equals(token)}")
     val result = sessionManager.invalidate(token)
     println(" Invalidated token with result " + result)
+  }
+
+  def createTokens( numTokens: Int, batchSize: Int, sessionManager: SessionManagerAsync ): Unit = {
+    println("Creating tokens")
+    val time = System.currentTimeMillis()
+    val tokens =  Flux.fromIterable( (0 until (numTokens/batchSize)).toList.asJava  )
+      .flatMap( batch => sessionManager.createSessions( batchSize, 600000) )
+      .collectList()
+      .map( _.asScala.toList.flatten )
+      .toFuture.get
+    println(s"Created ${tokens.size} tokens in ${System.currentTimeMillis() - time} ms.")
+    val token = tokens.head
+    val tokenStr = sessionManager.validate(tokens.head).toFuture.get().map(_.getTokenStr).getOrElse("")
+    println(s" Test validate $token  $tokenStr ${DigestUtils.sha256Hex(tokenStr).equals(token)}");
   }
 
 }

@@ -27,7 +27,6 @@ class TokensStateAsync {
 
   def setUpRedisson(): RedissonReactiveClient = {
     val redisson = RedisUtils.setUpRedisson(conf)
-    redisson.getKeys.flushall();
     redisson.reactive()
   }
 
@@ -41,23 +40,19 @@ class TokensStateAsync {
 
   @Setup(Level.Trial)
   def setup(): Unit = {
-    println("Creating tokens")
-    val time = System.currentTimeMillis()
-    ( 0 until numBatches ).foreach{ _ =>
-      sessionManager.createSessions( batchSize, 600000).toFuture.get.foreach { token =>
-        tokens.add(token)
-      }
-    }
-    println(s"Created ${ batchSize * numBatches } tokens in ${System.currentTimeMillis() - time} ms.")
+    println("Fetching tokens .")
+    val now = System.currentTimeMillis()
+    val keys = sessionManager.allTokens().toFuture.get()
+    tokens.addAll( keys.asJava )
+    println(s"Fetched ${tokens.size} tokens in ${ System.currentTimeMillis() - now} ms.")
     val token = tokens.get(0)
-    val tokenStr = sessionManager.validate(tokens.get(0)).toFuture.get().map(_.getTokenStr).getOrElse("")
+    val tokenStr = sessionManager.validate( token ).toFuture.get().map(_.getTokenStr).getOrElse("")
     println(s" Test validate $token  $tokenStr ${DigestUtils.sha256Hex(tokenStr).equals(token)}");
   }
 
   @TearDown(Level.Trial)
   def teardown(): Unit = {
     println( "Shutting down Redisson ")
-    redisson.getKeys.flushall()
     redisson.shutdown()
   }
 

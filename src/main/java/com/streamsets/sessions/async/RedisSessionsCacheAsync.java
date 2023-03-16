@@ -23,6 +23,12 @@ public class RedisSessionsCacheAsync implements SessionsCacheAsync {
     }
 
     @Override
+    public Mono<List<String>> allTokens() {
+        RMapReactive<String, String> principals = this.redisson.getMap("user_tokens#principals", StringCodec.INSTANCE);
+        return principals.keyIterator(1000).collectList();
+    }
+
+    @Override
     public Mono<Boolean> cacheAll(Map<String, SSOPrincipal> sessions) {
         return new RBatchExecutor()
                 .execute( (invalidTokens, principals, lastActivity, dbUpdated) ->

@@ -4,7 +4,6 @@ package com.streamsets.sessions.sync;
 import com.google.gson.Gson;
 import com.streamsets.sessions.SSOPrincipal;
 import com.streamsets.sessions.SSOPrincipalJson;
-import com.streamsets.sessions.async.RedisSessionsCacheAsync;
 import org.redisson.api.*;
 import org.redisson.client.codec.LongCodec;
 import org.redisson.client.codec.StringCodec;

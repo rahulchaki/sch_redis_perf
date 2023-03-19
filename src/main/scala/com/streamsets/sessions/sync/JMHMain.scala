@@ -9,8 +9,11 @@
 //import org.openjdk.jmh.runner.options.OptionsBuilder
 //import org.redisson.api.RedissonClient
 //
+//import java.nio.file.{Files, Paths}
 //import java.util
 //import java.util.concurrent.{ThreadLocalRandom, TimeUnit}
+//import scala.io.Source
+//import scala.jdk.CollectionConverters._
 //
 //@State( Scope.Benchmark)
 //class TokensState {
@@ -20,7 +23,8 @@
 //  val sessionManager = setUpSessionsManager( redisson )
 //  val tokens = new util.ArrayList[String]()
 //
-//
+//  val numTokens = 1_000_000
+//  val batchSize = 10_000
 //
 //  def setUpRedisson(): RedissonClient = {
 //    val redisson = RedisUtils.setUpRedisson( conf)
@@ -29,31 +33,57 @@
 //  }
 //
 //
-//  def setUpSessionsManager( redisson: RedissonClient ): StreamSetsSessionsManager = {
-//    val sessionsCache = new RedisSessionsCache(redisson)
-//    new StreamSetsSessionsManager(sessionsCache)
+//  def setUpSessionsManager( redisson: RedissonClient ): StreamSetsSessionsManagerV2 = {
+//    val sessionsCache = new RedisSessionsCacheV2(redisson)
+//    new StreamSetsSessionsManagerV2(sessionsCache)
 //  }
 //
-//
+//  def createTokens(): List[ String ] = {
+//    redisson.getKeys.flushall()
+//    println("Creating tokens")
+//    val now = System.currentTimeMillis()
+//    val tokens = (0 until (numTokens / batchSize)).flatMap { batch =>
+//      sessionManager.createSessions(batchSize, 600000)
+//    }.toList
+//    println(s" Created ${tokens.size} tokens in ${ System.currentTimeMillis() - now} ms. ")
+//    tokens
+//  }
 //
 //  @Setup(Level.Trial)
 //  def setup(): Unit = {
-//    println("Creating tokens")
-//    val numTokens = 10000
-//    val time = System.currentTimeMillis()
-//    (0 until numTokens).foreach { _ =>
-//      tokens.add( sessionManager.createSession(600000) )
+//    val forceCreate = true
+//    val now = System.currentTimeMillis()
+//    val del = "###"
+//    val keys = if( forceCreate ) {
+//      createTokens()
 //    }
-//    println(s"Created $numTokens tokens in ${System.currentTimeMillis() - time} ms.")
+//    else {
+//      if (Files.exists(Paths.get("tokens.list"))) {
+//        println("Loading tokens from file.")
+//        val all = Source.fromFile("tokens.list").mkString.split(del).toList
+//        println(s"Loaded ${all.size} tokens from file in ${System.currentTimeMillis() - now} ms.")
+//        all
+//      } else {
+//        println("Fetching tokens from Redis.")
+//        val all = sessionManager.allTokens() match {
+//          case Nil => createTokens()
+//          case list => list
+//        }
+//        Files.writeString(Paths.get("tokens.list"), all.mkString(del))
+//        println(s"Fetched ${all.size} tokens from Redis in ${System.currentTimeMillis() - now} ms.")
+//        all
+//      }
+//    }
+//
+//    tokens.addAll(keys.asJava)
 //    val token = tokens.get(0)
-//    val tokenStr = sessionManager.validate(tokens.get(0)).map(_.getTokenStr).getOrElse("")
-//    println(s" Test validate $token  $tokenStr ${DigestUtils.sha256Hex(tokenStr).equals(token)}");
+//    val tokenStr = sessionManager.validate(token).map(_.getTokenStr).getOrElse("")
+//    println(s" Test validate $token  $tokenStr ${DigestUtils.sha256Hex(tokenStr).equals(token)}")
 //  }
 //
 //  @TearDown(Level.Trial)
 //  def teardown(): Unit = {
 //    println( "Shutting down Redisson ")
-//    redisson.getKeys.flushall()
 //    redisson.shutdown()
 //  }
 //

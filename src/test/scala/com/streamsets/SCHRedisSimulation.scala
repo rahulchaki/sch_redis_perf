@@ -16,7 +16,7 @@ class SCHRedisSimulation extends Simulation {
   println( conf )
   println("======================================")
 
-  val httpProtocol = http.baseUrl(s"http://${schConf.api.host}:${schConf.api.port}/sessions")
+  val httpProtocol = http.baseUrl(s"http://${schConf.api}/sessions")
 
   val feeder = Iterator.continually {
     Map("expiresIn" -> schConf.expiresIn.toMillis )

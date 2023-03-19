@@ -15,9 +15,9 @@ object TestMainSync extends App {
   }
 
 
-  def setUpSessionsManager(redisson: RedissonClient): StreamSetsSessionsManager = {
-    val sessionsCache = new RedisSessionsCache(redisson)
-    new StreamSetsSessionsManager(sessionsCache)
+  def setUpSessionsManager(redisson: RedissonClient): SessionManager = {
+    val sessionsCache = new RedisSessionsCacheV2(redisson)
+    new StreamSetsSessionsManagerV2(sessionsCache)
   }
 
   def test(): Unit = {

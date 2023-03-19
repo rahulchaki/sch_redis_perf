@@ -28,8 +28,8 @@ public class SessionsControllerAsync {
     }
 
     @PostMapping("/invalidate")
-    private Mono<String> invalidate(@RequestParam("token") String token) {
-        return this.sessionManager.invalidate( token );
+    private Mono<Boolean> invalidate(@RequestParam("token") String token) {
+        return this.sessionManager.invalidate( token ).map( res ->  java.lang.Boolean.parseBoolean( res.toString() ));
     }
 
 }

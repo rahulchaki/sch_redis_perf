@@ -45,6 +45,36 @@ trait SessionManager {
 
 }
 
+class StreamSetsSessionsManagerV2( sessionsCache: RedisSessionsCacheV2 ) extends SessionManager {
+
+  def createSessions(num: Int, expiresIn: Long): List[ String ] = {
+    val sessions =
+    (0 until num).map { _ =>
+      val principal = SessionManager.newPrincipal(expiresIn)
+      val sessionHashId = SessionManager.toSessionHashID(principal.getTokenStr)
+      sessionHashId -> principal
+    }.toMap
+
+    sessionsCache
+      .cacheAll(sessions)
+    sessions.keys.toList
+  }
+
+  def allTokens(): List[String] = sessionsCache.allTokens()
+
+  override def createSession(expiresIn: Long): String = {
+    val principal = SessionManager.newPrincipal(expiresIn)
+    val sessionHashId = SessionManager.toSessionHashID(principal.getTokenStr)
+    sessionsCache.cache(sessionHashId, principal)
+    sessionHashId
+  }
+
+  override def validate(token: String): Option[SSOPrincipal] = {
+    sessionsCache.validateAndUpdateLastActivity( token, () => Some( SessionManager.newPrincipal(0) ), () => true )
+  }
+
+  override def invalidate(token: String): Boolean = sessionsCache.invalidate( List( token ))
+}
 
 class StreamSetsSessionsManager( sessionsCache: SessionsCache ) extends SessionManager {
   override def createSession( expiresIn: Long ): String = {

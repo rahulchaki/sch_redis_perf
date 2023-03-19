@@ -31,7 +31,9 @@ object TestMainAsync extends App {
     println(s" $numKeys tokens created ")
   }
 
-  createTokens()
+  //createTokens()
+
+  test()
 
   redisson.shutdown()
 

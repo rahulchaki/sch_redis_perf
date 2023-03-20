@@ -7,7 +7,7 @@ enablePlugins(JavaServerAppPackaging, GatlingPlugin, JmhPlugin)
 lazy val root = (project in file("."))
   .settings(
     name := "sch_redis_perf",
-    Compile / run / mainClass := Some("com.streamsets.Main"),
+    Compile / run / mainClass := Some("com.streamsets.spring.SpringBootMain"),
     libraryDependencies ++= Seq(
       "com.github.pureconfig" %% "pureconfig" % "0.17.2",
       "org.redisson" % "redisson" % "3.20.0",

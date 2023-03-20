@@ -1,6 +1,6 @@
-package com.streamsets.sessions.sync
+package com.streamsets.sch
+
 import com.google.gson.Gson
-import com.streamsets.sessions.{SSOPrincipal, SSOPrincipalJson}
 import com.streamsets.{RedisUtils, Settings}
 import org.redisson.api.{BatchOptions, RMap, RMapReactive, RedissonClient}
 import org.redisson.client.codec.StringCodec
@@ -9,13 +9,13 @@ import reactor.core.publisher.{Flux, Mono}
 import java.time.Duration
 import scala.jdk.CollectionConverters._
 
-class RedisSessionsCacheV2( redisson: RedissonClient ) {
+class RedisSessionsCache(redisson: RedissonClient ) {
 
   private val gson = new Gson
 
   private def newHandler( sessionHashId: String ) = new RedisHandler( redisson.getMap( sessionHashId, StringCodec.INSTANCE ) )
 
-  def allTokens(): List[String] = redisson.getKeys.getKeysStream(1000).toList.asScala.toList
+  def allTokens(): Set[String] = redisson.getKeys.getKeysStream(1000).toList.asScala.toSet
   def cacheAll(sessions: Map[String, SSOPrincipal]): Unit = {
     val batch = redisson.createBatch( BatchOptions.defaults().skipResult() )
     sessions.foreach{
@@ -54,7 +54,7 @@ class RedisSessionsCacheV2( redisson: RedissonClient ) {
                   updateMainDB()
                 } else false
                 handler.updateLastActivity( toUpdateDB )
-                Some( gson.fromJson(session.principal, classOf[SSOPrincipalJson]) )
+                Some( gson.fromJson(session.principal, classOf[SSOPrincipal]) )
               case None => principalNotFound()
             }
         }
@@ -71,7 +71,7 @@ class RedisSessionsCacheV2( redisson: RedissonClient ) {
 
 }
 
-class RedisSessionsCacheV2Async( redissonClient : RedissonClient ) {
+class RedisSessionsCacheAsync(redissonClient : RedissonClient ) {
 
   private val redisson = redissonClient.reactive()
 
@@ -82,6 +82,7 @@ class RedisSessionsCacheV2Async( redissonClient : RedissonClient ) {
   def allTokens(): Mono[ Set[String] ] = redisson
     .getKeys.getKeys(1000).collectList()
     .map( _.asScala.toSet )
+  
   def cacheAll(sessions: Map[String, SSOPrincipal]): Mono[ Unit ] = {
     val batch = redisson.createBatch( BatchOptions.defaults().skipResult() )
     sessions.foreach{
@@ -128,7 +129,7 @@ class RedisSessionsCacheV2Async( redissonClient : RedissonClient ) {
                 handler
                   .updateLastActivity(toUpdateDB)
                   .map(_ =>
-                    Some(gson.fromJson(session.principal, classOf[SSOPrincipalJson]))
+                    Some(gson.fromJson(session.principal, classOf[SSOPrincipal]))
                   )
 
               case None => principalNotFound()
@@ -154,22 +155,6 @@ class RedisSessionsCacheV2Async( redissonClient : RedissonClient ) {
   }
 
 }
-
-//object RedisHandler {
-//  def readAndUpdateLastActivity( sessionHashId: String, batch: RBatch ): Option[RedisEntry] = {
-//    val handler = batch.getMap[String, AnyRef](sessionHashId, StringCodec.INSTANCE)
-//    handler.getAllAsync(  Set( RedisEntry.IS_INVALID, RedisEntry.LAST_DB_UPDATED, RedisEntry.SSO_PRINCIPAL ).asJava )
-//    handler.putAsync( RedisEntry.LAST_ACTIVITY_AT, System.currentTimeMillis() )
-//    val responses = batch.execute().getResponses
-//    val rest = responses.get( 0 ).asInstanceOf[ java.util.Map[ String, String ]]
-//    rest.put( RedisEntry.LAST_ACTIVITY_AT,  responses.get( 1 ).asInstanceOf[String] )
-//    if (rest.isEmpty) None
-//    else {
-//      Some(RedisEntry.fromMap(data))
-//    }
-//
-//  }
-//}
 
 class RedisHandlerAsync( redis: RMapReactive[ String, AnyRef ] ){
   def create( principal: String ): Mono[ Void ] = {

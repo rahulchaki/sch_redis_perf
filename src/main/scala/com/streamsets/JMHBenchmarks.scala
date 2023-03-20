@@ -1,10 +1,8 @@
 package com.streamsets
 
-import com.streamsets.sessions.SSOPrincipal
-import com.streamsets.sessions.async.StreamSetsSessionsManagerV2Async
-import com.streamsets.sessions.sync.{RedisSessionsCacheV2, RedisSessionsCacheV2Async, StreamSetsSessionsManagerV2}
+import com.streamsets.sch.{RedisSessionsCache, RedisSessionsCacheAsync, SSOPrincipal, SessionsManager}
 import org.apache.commons.codec.digest.DigestUtils
-import org.openjdk.jmh.annotations.{Benchmark, BenchmarkMode, Fork, Level, Measurement, Mode, OutputTimeUnit, Scope, Setup, State, TearDown, Threads, Warmup}
+import org.openjdk.jmh.annotations._
 import org.openjdk.jmh.infra.Blackhole
 import org.redisson.api.RedissonClient
 import reactor.core.publisher.Flux
@@ -22,7 +20,6 @@ class TokensState {
   val conf = Settings.load()
   val redisson = setUpRedisson()
   val sessionManager = setUpSessionsManager(redisson)
-  val sessionManagerAsync = setUpSessionsManagerAsync(redisson)
   val tokens = new util.ArrayList[String]()
 
   val numTokens = 1_000_000
@@ -35,25 +32,15 @@ class TokensState {
   }
 
 
-  def setUpSessionsManager(redisson: RedissonClient): StreamSetsSessionsManagerV2 = {
-    val sessionsCache = new RedisSessionsCacheV2(redisson)
-    new StreamSetsSessionsManagerV2(sessionsCache)
-  }
-
-  def setUpSessionsManagerAsync(redisson: RedissonClient): StreamSetsSessionsManagerV2Async = {
-    val sessionsCache = new RedisSessionsCacheV2Async(redisson)
-    new StreamSetsSessionsManagerV2Async(sessionsCache)
+  def setUpSessionsManager(redisson: RedissonClient): SessionsManager = {
+    val sessionsCache = new RedisSessionsCache(redisson)
+    val sessionsCacheAsync = new RedisSessionsCacheAsync(redisson)
+    new SessionsManager(sessionsCache,sessionsCacheAsync)
   }
 
   def createTokens(): List[String] = {
     redisson.getKeys.flushall()
-    println("Creating tokens")
-    val now = System.currentTimeMillis()
-    val tokens = (0 until (numTokens / batchSize)).flatMap { batch =>
-      sessionManager.createSessions(batchSize, 600000)
-    }.toList
-    println(s" Created ${tokens.size} tokens in ${System.currentTimeMillis() - now} ms. ")
-    tokens
+    TestSessions.createTokens( numTokens, batchSize, sessionManager )
   }
 
   @Setup(Level.Trial)
@@ -72,10 +59,10 @@ class TokensState {
         all
       } else {
         println("Fetching tokens from Redis.")
-        val all = sessionManager.allTokens() match {
-          case Nil => createTokens()
-          case list => list
-        }
+        val redisTokens = sessionManager.allTokens()
+        val all = if( redisTokens.isEmpty )
+          createTokens()
+        else redisTokens.toList
         Files.writeString(Paths.get("tokens.list"), all.mkString(del))
         println(s"Fetched ${all.size} tokens from Redis in ${System.currentTimeMillis() - now} ms.")
         all
@@ -84,7 +71,7 @@ class TokensState {
 
     tokens.addAll(keys.asJava)
     val token = tokens.get(0)
-    val tokenStr = sessionManager.validate(token).map(_.getTokenStr).getOrElse("")
+    val tokenStr = sessionManager.validate(token).map(_.token).getOrElse("")
     println(s" Test validate $token  $tokenStr ${DigestUtils.sha256Hex(tokenStr).equals(token)}")
   }
 
@@ -103,7 +90,7 @@ class TokensState {
   def validateAsync(): Int = {
     val batch = ThreadLocalRandom.current().nextInt( numTokens / batchSize)
     Flux.fromIterable(tokens.asScala.slice(batch * batchSize, batch * batchSize + batchSize).toList.asJava)
-      .flatMap(token => sessionManagerAsync.validate(token))
+      .flatMap(token => sessionManager.validateAsync(token))
       .collectList()
       .toFuture
       .get()

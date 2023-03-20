@@ -3,11 +3,8 @@ package com.streamsets
 import org.redisson.Redisson
 import org.redisson.api.RedissonClient
 import org.redisson.config.{Config, ReadMode}
-import org.redisson.connection.ClientConnectionsEntry
-import org.redisson.connection.balancer.{LoadBalancer, RandomLoadBalancer, RoundRobinLoadBalancer}
+import org.redisson.connection.balancer.RoundRobinLoadBalancer
 
-import java.util
-import java.util.concurrent.atomic.AtomicInteger
 import scala.jdk.CollectionConverters._
 
 object RedisUtils {

@@ -86,7 +86,7 @@ class TokensState {
   def validateAsync(): Int = {
     val batch = ThreadLocalRandom.current().nextInt( numTokens / batchSize)
     Flux.fromIterable(tokens.asScala.slice(batch * batchSize, batch * batchSize + batchSize).toList.asJava)
-      .flatMap(token => Mono.fromFuture( sessionManager.validateAsync(token) ) )
+      .flatMap(token => Mono.fromFuture( () => sessionManager.validateAsync(token) ) )
       .collectList()
       .toFuture
       .get()
@@ -109,19 +109,19 @@ class JMHBenchmarks {
     val numTokens = state.validateAsync()
     blackhole.consume(numTokens)
   }
-
-  @Benchmark
-  @BenchmarkMode(Array(Mode.Throughput))
-  @OutputTimeUnit(TimeUnit.MILLISECONDS)
-  @Warmup(iterations = 1, time = 5, timeUnit = TimeUnit.SECONDS)
-  @Measurement(iterations = 10, time = 10, timeUnit = TimeUnit.SECONDS)
-  @Fork(1)
-  @Threads(64)
-  def validate(state: TokensState, blackhole: Blackhole): Unit = {
-    blackhole.consume(
-      state.validate()
-    )
-  }
+//
+//  @Benchmark
+//  @BenchmarkMode(Array(Mode.Throughput))
+//  @OutputTimeUnit(TimeUnit.MILLISECONDS)
+//  @Warmup(iterations = 1, time = 5, timeUnit = TimeUnit.SECONDS)
+//  @Measurement(iterations = 10, time = 10, timeUnit = TimeUnit.SECONDS)
+//  @Fork(1)
+//  @Threads(64)
+//  def validate(state: TokensState, blackhole: Blackhole): Unit = {
+//    blackhole.consume(
+//      state.validate()
+//    )
+//  }
 
 
 }

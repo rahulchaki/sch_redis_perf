@@ -1,12 +1,8 @@
 package com.streamsets.sch
 
 import org.apache.commons.codec.digest.DigestUtils
-import reactor.core.publisher.{Flux, Mono}
 
-import java.util.concurrent.{CompletableFuture, Executor, Executors, TimeUnit}
-import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.jdk.CollectionConverters._
+import java.util.concurrent.{CompletableFuture, Executor}
 
 
 class SessionsManager(
@@ -63,14 +59,16 @@ class SessionsManager(
 object SessionsManager {
   def test(sessionManager: SessionsManager): Unit = {
     println(" Testing sch redis............ ")
-    val token = sessionManager.createSessions(1, 60000).head
-    println(" Created session with token " + token)
-    val principal = sessionManager.validateAsync(token).get()
-    println(" Validated token with result " + principal.isDefined)
-    val tokenStr = principal.map(_.token).getOrElse("")
-    println(s" Token : $token  tokenStr $tokenStr result ${DigestUtils.sha256Hex(tokenStr).equals(token)}")
-    val result = sessionManager.invalidate(token)
-    println(" Invalidated token with result " + result)
+    val tokens = sessionManager.createSessions(100, 60000)
+    println(s" Created  ${tokens.size} tokens " )
+    tokens.foreach{ token =>
+      val principal = sessionManager.validateAsync(token).get()
+      println(" Validated token with result " + principal.isDefined)
+      val tokenStr = principal.map(_.token).getOrElse("")
+      println(s" Token : $token  tokenStr $tokenStr result ${DigestUtils.sha256Hex(tokenStr).equals(token)}")
+      val result = sessionManager.invalidate(token)
+      println(" Invalidated token with result " + result)
+    }
   }
 
   def createTokens(numTokens: Int, batchSize: Int, sessionManager: SessionsManager): List[String] = {

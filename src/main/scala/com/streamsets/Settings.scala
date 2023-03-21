@@ -10,12 +10,12 @@ case class Pauses( validate: FiniteDuration, invalidate: FiniteDuration)
 case class Durations( total: FiniteDuration, validate: FiniteDuration, invalidate: FiniteDuration, pauses: Pauses )
 case class SimulationConf( users: Int, createMaxTries: Int, durations: Durations )
 
-case class SCHConf( api: String, expiresIn: FiniteDuration )
+case class SCHConf( api: String, expiresIn: FiniteDuration, dbIOThreads: Int )
 case class RedisConf( primary: String, pool: Int, threads: Int, replicas: List[String] )
 
 case class AppConf(
                     redis: RedisConf = RedisConf( primary = "127.0.0.1:6379", pool = 64, threads = 64, replicas = List.empty ),
-                    sch: SCHConf = SCHConf( api = "localhost:8080", expiresIn = 60.seconds ),
+                    sch: SCHConf = SCHConf( api = "localhost:8080", expiresIn = 60.seconds, dbIOThreads = 2 ),
                     simulation: SimulationConf = SimulationConf(
                       users = 1000,
                       createMaxTries= 4,

@@ -1,231 +1,161 @@
 package com.streamsets.sch
 
-import com.google.gson.Gson
 import com.streamsets.{RedisUtils, Settings}
-import org.redisson.api.{BatchOptions, RMap, RMapReactive, RedissonClient}
+import org.redisson.api.{BatchOptions, RMap, RedissonClient}
 import org.redisson.client.codec.StringCodec
 import reactor.core.publisher.{Flux, Mono}
 
 import java.time.Duration
+import java.util.concurrent.{CompletableFuture, TimeUnit}
 import scala.jdk.CollectionConverters._
 
-class RedisSessionsCache(redisson: RedissonClient ) {
+class RedisSessionsCacheManager( redisson: RedissonClient ) {
 
-  private val gson = new Gson
+  private def newHandler( sessionHashId: String ) = new RedisTokenHandler( redisson.getMap[String, AnyRef]( sessionHashId, StringCodec.INSTANCE ) )
+  def allTokens(): Set[String] = redisson
+    .getKeys.getKeys(1000).asScala.toSet
 
-  private def newHandler( sessionHashId: String ) = new RedisHandler( redisson.getMap( sessionHashId, StringCodec.INSTANCE ) )
-
-  def allTokens(): Set[String] = redisson.getKeys.getKeysStream(1000).toList.asScala.toSet
   def cacheAll(sessions: Map[String, SSOPrincipal]): Unit = {
-    val batch = redisson.createBatch( BatchOptions.defaults().skipResult() )
-    sessions.foreach{
-      case ( sessionHashId, principal ) =>
-        val handler = batch.getMap[String, AnyRef]( sessionHashId, StringCodec.INSTANCE )
-        handler.putAllAsync( RedisEntry.toMap(gson.toJson( principal) ).asJava )
+    val batch = redisson.createBatch(
+      BatchOptions.defaults()
+        .skipResult()
+        .syncSlaves(1, 1, TimeUnit.MINUTES)
+    )
+    sessions.foreach {
+      case (sessionHashId, principal) =>
+        val handler = batch.getMap[String, AnyRef](sessionHashId, StringCodec.INSTANCE)
+        handler.putAllAsync(RedisEntry.toMap(SSOPrincipal.serialize(principal)).asJava)
     }
     batch.execute()
   }
 
   def cache(sessionHashId: String, principal: SSOPrincipal): Unit = {
-    val handler = newHandler( sessionHashId )
-    handler.create( gson.toJson( principal) )
+    val handler = newHandler(sessionHashId)
+    handler.create(SSOPrincipal.serialize(principal))
   }
 
-  def validateAndUpdateLastActivity( sessionHashId: String, validateFromDB: () => Option[SSOPrincipal], updateMainDB: () => Boolean ): Option[SSOPrincipal] = {
-    val handler = newHandler( sessionHashId )
-    def principalNotFound(): Option[SSOPrincipal] = {
-      validateFromDB() match {
-        case Some( principal ) =>
-          handler.create( gson.toJson( principal) )
-          Some( principal )
-        case None =>
-          invalidate( List( sessionHashId ) )
-          None
+  private def onPrincipalNotFound(
+                                   sessionHashId: String,
+                                   handler: RedisTokenHandler,
+                                   validateFromDB: String => CompletableFuture[ Option[SSOPrincipal] ]
+                                 ): CompletableFuture[ Option[SSOPrincipal] ]= {
+    validateFromDB( sessionHashId )
+      .thenApply{ result =>
+        result match {
+          case Some(principal) =>
+            handler.create(SSOPrincipal.serialize(principal))
+          case None =>
+            handler.invalidate()
+        }
+        result
       }
     }
-    handler.read() match {
-      case Some( entry ) =>
-        entry.isInvalid match {
-          case Some( true ) => None
-          case None | Some( false ) =>
-            entry.session match {
-              case Some( session ) =>
-                val toUpdateDB = if( (System.currentTimeMillis() - session.lastDBUpdated) > Duration.ofMinutes(1).toMillis ){
-                  updateMainDB()
-                } else false
-                handler.updateLastActivity( toUpdateDB )
-                Some( gson.fromJson(session.principal, classOf[SSOPrincipal]) )
-              case None => principalNotFound()
-            }
+
+
+  private def onPrincipalFound(
+                                sessionHashId: String,
+                                handler: RedisTokenHandler,
+                                session: Session,
+                                updateMainDB: String => CompletableFuture[ Boolean ]
+                              ): CompletableFuture[Option[SSOPrincipal]] = {
+
+    val principal = Some(SSOPrincipal.deserialize(session.principal))
+    val result = if ((System.currentTimeMillis() - session.lastDBUpdated) > Duration.ofMinutes(10).toMillis) {
+      updateMainDB( sessionHashId )
+        .thenCompose( toUpdateDB =>  handler.updateLastActivity(toUpdateDB) )
+    } else {
+      handler.updateLastActivity(false)
+    }
+    result
+      .thenApply( _ => principal )
+  }
+
+  private def onCacheFound(
+                    sessionHashId: String,
+                    handler: RedisTokenHandler,
+                    entry: RedisEntry,
+                    validateFromDB: String => CompletableFuture[ Option[SSOPrincipal] ],
+                    updateMainDB: String => CompletableFuture[ Boolean ]
+                  ): CompletableFuture[Option[SSOPrincipal]] = {
+    entry.isInvalid match {
+      case Some(true) => CompletableFuture.completedFuture( None )
+      case Some(false) | None =>
+        entry.session match {
+          case Some(session) =>
+            onPrincipalFound( sessionHashId, handler, session, updateMainDB )
+          case None =>
+            onPrincipalNotFound( sessionHashId, handler, validateFromDB )
         }
-      case None => principalNotFound()
     }
-  }
-
-  def invalidate(sessionHashIds: List[String]): Boolean = {
-    ! sessionHashIds.map{ sessionHashId =>
-      val handler = newHandler( sessionHashId )
-      handler.invalidate()
-    }.contains( false )
-  }
-
-}
-
-class RedisSessionsCacheAsync(redissonClient : RedissonClient ) {
-
-  private val redisson = redissonClient.reactive()
-
-  private val gson = new Gson
-
-  private def newHandler( sessionHashId: String ) = new RedisHandlerAsync( redisson.getMap( sessionHashId, StringCodec.INSTANCE ) )
-
-  def allTokens(): Mono[ Set[String] ] = redisson
-    .getKeys.getKeys(1000).collectList()
-    .map( _.asScala.toSet )
-  
-  def cacheAll(sessions: Map[String, SSOPrincipal]): Mono[ Unit ] = {
-    val batch = redisson.createBatch( BatchOptions.defaults().skipResult() )
-    sessions.foreach{
-      case ( sessionHashId, principal ) =>
-        val handler = batch.getMap[String, AnyRef]( sessionHashId, StringCodec.INSTANCE )
-        handler.putAll( RedisEntry.toMap(gson.toJson( principal) ).asJava )
-    }
-    batch.execute().map( _ => () )
-  }
-
-  def cache(sessionHashId: String, principal: SSOPrincipal): Mono[ Void ] = {
-    val handler = newHandler( sessionHashId )
-    handler.create( gson.toJson( principal) )
   }
 
   def validateAndUpdateLastActivity(
                                      sessionHashId: String,
-                                     validateFromDB: () => Option[SSOPrincipal],
-                                     updateMainDB: () => Boolean
-                                   ): Mono[ Option[SSOPrincipal] ] = {
-    val handler = newHandler( sessionHashId )
-    def principalNotFound(): Mono[ Option[SSOPrincipal] ] = {
-      validateFromDB() match {
-        case Some( principal ) =>
-          handler
-            .create( gson.toJson( principal) )
-            .map( _ => Some( principal ) )
+                                     validateFromDB: String => CompletableFuture[ Option[SSOPrincipal] ],
+                                     updateMainDB: String => CompletableFuture[ Boolean ]
+                                   ): CompletableFuture[Option[SSOPrincipal]] = {
+    val handler = newHandler(sessionHashId)
+    handler.read()
+      .thenCompose{
+        case Some( entry ) =>
+          onCacheFound( sessionHashId, handler, entry, validateFromDB, updateMainDB )
         case None =>
-          invalidate( List( sessionHashId ) )
-            .map( _ => None )
+          onPrincipalNotFound( sessionHashId, handler, validateFromDB )
       }
-    }
-
-    handler.read().flatMap {
-      case Some(entry) =>
-        entry.isInvalid match {
-          case Some(true) => Mono.just(None)
-          case None | Some(false) =>
-            entry.session match {
-              case Some(session) =>
-                val toUpdateDB = if ((System.currentTimeMillis() - session.lastDBUpdated) > Duration.ofMinutes(1).toMillis) {
-                  updateMainDB()
-                } else false
-                handler
-                  .updateLastActivity(toUpdateDB)
-                  .map(_ =>
-                    Some(gson.fromJson(session.principal, classOf[SSOPrincipal]))
-                  )
-
-              case None => principalNotFound()
-            }
-        }
-      case None => principalNotFound()
-    }
   }
 
-  def invalidate( sessionHashId: String ): Mono[ Boolean ] = {
+  def invalidate(sessionHashId: String): Boolean = {
     val handler = newHandler(sessionHashId)
     handler.invalidate()
   }
-  def invalidate(sessionHashIds: List[String]): Mono[ Boolean ] = {
-    Flux.fromIterable( sessionHashIds.asJava )
-      .flatMap{ sessionHashId =>
-        val handler = newHandler(sessionHashId)
-        handler.invalidate()
-      }
-      .collectList()
-      .map( results => results.asScala.forall( _ == true ) )
-
-  }
-
 }
 
-class RedisHandlerAsync( redis: RMapReactive[ String, AnyRef ] ){
-  def create( principal: String ): Mono[ Void ] = {
+class RedisTokenHandler( redis: RMap[ String, AnyRef ] ) {
+  def create(principal: String): Unit = {
     val updates = RedisEntry.toMap(principal).asJava
     redis.putAll(updates)
   }
-  def read(): Mono[ Option[RedisEntry] ] = {
-    redis.readAllMap().map{ raw =>
-      val data = raw.asScala.toMap.asInstanceOf[Map[String, String]]
-      if (data.isEmpty) None
-      else {
-        Some(RedisEntry.fromMap(data))
-      }
-    }
+
+  def read(): CompletableFuture[Option[RedisEntry]] = {
+    redis.readAllMapAsync()
+      .thenApply { raw =>
+        val data = raw.asScala.toMap.asInstanceOf[Map[String, String]]
+        if (data.isEmpty) None
+        else {
+          Some(RedisEntry.fromMap(data))
+        }
+      }.toCompletableFuture
   }
 
-  def updateLastActivity(hasDBUpdated: Boolean): Mono[ Void ] = {
+  def updateLastActivity(hasDBUpdated: Boolean): CompletableFuture[Boolean] = {
     val now = java.lang.Long.valueOf(System.currentTimeMillis())
-    val updates = if (hasDBUpdated) {
-      Map(RedisEntry.LAST_ACTIVITY_AT -> now, RedisEntry.LAST_DB_UPDATED -> now)
+    if (hasDBUpdated) {
+      redis.putAllAsync(
+        Map(
+          RedisEntry.LAST_ACTIVITY_AT -> now,
+          RedisEntry.LAST_DB_UPDATED -> now
+        ).asJava
+      )
+        .thenApply(_ => true)
+        .toCompletableFuture
+
     }
     else {
-      Map(RedisEntry.LAST_ACTIVITY_AT -> now)
+      redis
+        .fastPutAsync(RedisEntry.LAST_ACTIVITY_AT, now)
+        .thenApply(_.booleanValue())
+        .toCompletableFuture
+
     }
-    redis.putAll(updates.asJava)
-  }
-
-  def invalidate(): Mono[ Boolean ] = {
-    redis.expire( Duration.ofMinutes(1) )
-      .flatMap { isExpired =>
-        redis
-          .fastPut(RedisEntry.IS_INVALID, java.lang.Boolean.TRUE)
-          .map( _ => isExpired )
-      }
-  }
-
-
-}
-class RedisHandler( redis: RMap[ String, AnyRef ] ){
-
-  def create( principal: String ): Unit = {
-    val updates = RedisEntry.toMap( principal ).asJava
-    redis.putAll( updates )
-  }
-  def read(): Option[RedisEntry] = {
-    val data = redis.readAllMap().asScala.toMap.asInstanceOf[ Map[String, String ]]
-    if( data.isEmpty) None
-    else {
-      Some( RedisEntry.fromMap( data ) )
-    }
-
-  }
-
-  def updateLastActivity( hasDBUpdated: Boolean ): Unit = {
-    val now = java.lang.Long.valueOf( System.currentTimeMillis() )
-    val updates = if( hasDBUpdated ){
-      Map( RedisEntry.LAST_ACTIVITY_AT -> now, RedisEntry.LAST_DB_UPDATED -> now )
-    }
-    else{
-      Map( RedisEntry.LAST_ACTIVITY_AT -> now )
-    }
-    redis.putAll( updates.asJava )
   }
 
   def invalidate(): Boolean = {
-    val expirySet = redis.expire( Duration.ofMinutes(1))
-    redis.fastPut(RedisEntry.IS_INVALID, java.lang.Boolean.TRUE )
-    expirySet
+    val isExpired = redis.expire( Duration.ofSeconds(5) )
+    redis.fastPut(RedisEntry.IS_INVALID, java.lang.Boolean.TRUE)
+    isExpired
   }
-
 }
+
 
 case class Session( lastActivity: Long, lastDBUpdated: Long, principal: String )
 case class RedisEntry( isInvalid: Option[Boolean], session: Option[Session] )
@@ -259,15 +189,28 @@ object RedisEntry{
   }
 }
 
-
-object RedisHandlerTest extends App {
+object RedisTokenHandlerTest extends App {
   val conf = Settings.load()
   val redisson = RedisUtils.setUpRedisson(conf)
-  ( 0 until 100 ).foreach{ i =>
-    val handler = new RedisHandler(redisson.getMap(s"token_$i", StringCodec.INSTANCE))
-    val now = System.currentTimeMillis()
-    handler.create("{name:abs}")
-    println(handler.read())
-  }
+
+  val created = Flux.fromIterable( ( 0 until 100 ).toList.asJava )
+    .map{ i =>
+      val handler = new RedisTokenHandler(redisson.getMap(s"token_$i", StringCodec.INSTANCE))
+      handler.create(s"{name:abs_${i}}")
+    }
+    .collectList()
+    .toFuture.get()
+
+  println(s" Created tokens ${created.size()}")
+
+  val principals = Flux.fromIterable((0 until 100).toList.asJava)
+    .flatMap { i =>
+      val handler = new RedisTokenHandler(redisson.getMap(s"token_$i", StringCodec.INSTANCE))
+      Mono.fromFuture( handler.read() )
+    }
+    .collectList()
+    .toFuture.get()
+
+  println(s" Read tokens ${principals.size()} first ${principals.get(0)}")
 
 }

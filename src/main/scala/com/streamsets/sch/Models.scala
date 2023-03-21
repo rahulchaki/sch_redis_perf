@@ -4,6 +4,8 @@ import org.apache.commons.codec.digest.DigestUtils
 
 import java.util.UUID
 import scala.util.Random
+import upickle.default.{macroRW, ReadWriter => RW}
+import upickle.default._
 
 case class SSOPrincipal(
                        token: String,
@@ -22,6 +24,10 @@ case class SSOPrincipal(
                        )
 
 object SSOPrincipal{
+
+  implicit val rw: RW[SSOPrincipal] = macroRW
+
+
   def makeToken(expiry: Long): String = {
     val instanceId = Random.alphanumeric.take(36).mkString
     val id = UUID.randomUUID().toString
@@ -49,5 +55,13 @@ object SSOPrincipal{
       requesterIP = Some("1.1.1.1")
     )
   }
-  
+
+  def serialize( principal: SSOPrincipal ): String = {
+    write( principal )
+  }
+
+  def deserialize( serialized: String ): SSOPrincipal = {
+    read[SSOPrincipal]( serialized )
+  }
+
 }

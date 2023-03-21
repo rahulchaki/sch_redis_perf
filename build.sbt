@@ -11,7 +11,7 @@ lazy val root = (project in file("."))
     libraryDependencies ++= Seq(
       "com.github.pureconfig" %% "pureconfig" % "0.17.2",
       "org.redisson" % "redisson" % "3.20.0",
-      "com.google.code.gson" % "gson" % "2.10.1",
+      "com.lihaoyi" %% "upickle" % "3.0.0",
       "commons-codec" % "commons-codec" % "1.15",
       "org.springframework.boot" % "spring-boot-starter-webflux" % "3.0.4",
       "org.openjdk.jmh" % "jmh-generator-annprocess" % "1.36",

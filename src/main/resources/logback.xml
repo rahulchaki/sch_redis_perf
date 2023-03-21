@@ -12,6 +12,10 @@
     <!-- uncomment and set to TRACE to log all HTTP requests -->
 <!--    <logger name="io.gatling.http.engine.response" level="DEBUG" />-->
 
+<!--    <logger name="org.redisson" additivity="true">-->
+<!--        <level value="DEBUG"/>-->
+<!--    </logger>-->
+
     <root level="INFO">
         <appender-ref ref="CONSOLE" />
     </root>

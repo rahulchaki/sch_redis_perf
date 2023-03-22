@@ -46,6 +46,42 @@ class TokensState {
       }
   }
 
+  def validateInnerAsyncConcurrent(token: String): CompletableFuture[ lang.Boolean] = {
+    val newHandler = redisson.getMap[String, AnyRef](token, StringCodec.INSTANCE)
+    val lastActivityF = newHandler.putIfExistsAsync(
+      RedisEntry.LAST_ACTIVITY_AT, java.lang.Long.valueOf(System.currentTimeMillis())
+    )
+    newHandler.readAllMapAsync()
+      .toCompletableFuture
+      .thenCombine(
+        lastActivityF,
+        ( data, lastActivity: AnyRef ) => {
+          data.put(RedisEntry.LAST_ACTIVITY_AT, lastActivity)
+          data.asScala.toMap
+          true
+        }
+      )
+  }
+
+  def validateInnerReactiveJustRead(token: String): Mono[lang.Boolean] = {
+    val newHandler = redisson.reactive().getMap[String, AnyRef](token, StringCodec.INSTANCE)
+    newHandler.readAllMap()
+      .map( _ => true)
+
+  }
+  def validateInnerReactiveConcurrent(token: String): Mono[lang.Boolean] = {
+    val newHandler = redisson.reactive().getMap[String, AnyRef](token, StringCodec.INSTANCE)
+    val lastActivityM = newHandler.put( RedisEntry.LAST_ACTIVITY_AT, java.lang.Long.valueOf(System.currentTimeMillis()) )
+    val dataM = newHandler.readAllMap()
+    dataM.zipWith( lastActivityM)
+      .map{ tup =>
+        val data = tup.getT1
+        val lastActivity = tup.getT2
+        data.put( RedisEntry.LAST_ACTIVITY_AT, lastActivity )
+        true
+      }
+  }
+
   def validateInnerReactive(token: String): Mono[lang.Boolean] = {
     val newHandler = redisson.reactive().getMap[String, AnyRef](token, StringCodec.INSTANCE)
     newHandler.readAllMap()
@@ -63,17 +99,18 @@ class TokensState {
 
   def wrapValidateInnerAsMono( token: String, which: Int ): Mono[lang.Boolean] = {
     which match {
-      case 0 => Mono.fromFuture( ()=> validateInnerAsync(token ) )
-      case 1 => validateInnerReactive( token )
+      case 0 => Mono.fromFuture( ()=> validateInnerAsyncConcurrent(token ) )
+      case 1 => validateInnerReactiveConcurrent( token )
       case 2 => Mono.just( validateInnerSync( token ) )
+      case 3 => validateInnerReactiveJustRead( token )
+      case 4 => validateInnerReactive( token )
     }
   }
   def validateBatch( which: Int ): Int = {
     val batch = ThreadLocalRandom.current().nextInt(numTokens / batchSize)
     Flux.fromIterable(tokens.asScala.slice(batch * batchSize, batch * batchSize + batchSize).toList.asJava)
       .flatMap(
-        token => wrapValidateInnerAsMono( token, which),
-        conf.redis.threads
+        token => wrapValidateInnerAsMono( token, which)
       )
       .collectList()
       .toFuture
@@ -91,18 +128,6 @@ class TokensState {
 class JMHBenchmarks {
 
 
-  @Benchmark
-  @BenchmarkMode(Array(Mode.Throughput))
-  @OutputTimeUnit(TimeUnit.SECONDS)
-  @Warmup(iterations = 1, time = 5, timeUnit = TimeUnit.SECONDS)
-  @Measurement(iterations = 10, time = 10, timeUnit = TimeUnit.SECONDS)
-  @Fork(1)
-  @Threads(2)
-  def validateAsync(state: TokensState, blackhole: Blackhole): Unit = {
-    val numTokens = state.validateBatch(0)
-    blackhole.consume(numTokens)
-  }
-//
 //  @Benchmark
 //  @BenchmarkMode(Array(Mode.Throughput))
 //  @OutputTimeUnit(TimeUnit.SECONDS)
@@ -110,10 +135,46 @@ class JMHBenchmarks {
 //  @Measurement(iterations = 10, time = 10, timeUnit = TimeUnit.SECONDS)
 //  @Fork(1)
 //  @Threads(2)
-//  def validateReactive(state: TokensState, blackhole: Blackhole): Unit = {
-//    val numTokens = state.validateBatch(1)
+//  def validateAsync(state: TokensState, blackhole: Blackhole): Unit = {
+//    val numTokens = state.validateBatch(0)
 //    blackhole.consume(numTokens)
 //  }
+//
+  @Benchmark
+  @BenchmarkMode(Array(Mode.Throughput))
+  @OutputTimeUnit(TimeUnit.SECONDS)
+  @Warmup(iterations = 1, time = 5, timeUnit = TimeUnit.SECONDS)
+  @Measurement(iterations = 10, time = 10, timeUnit = TimeUnit.SECONDS)
+  @Fork(1)
+  @Threads(2)
+  def validateReactiveConcurrent(state: TokensState, blackhole: Blackhole): Unit = {
+    val numTokens = state.validateBatch(1)
+    blackhole.consume(numTokens)
+  }
+
+  @Benchmark
+  @BenchmarkMode(Array(Mode.Throughput))
+  @OutputTimeUnit(TimeUnit.SECONDS)
+  @Warmup(iterations = 1, time = 5, timeUnit = TimeUnit.SECONDS)
+  @Measurement(iterations = 10, time = 10, timeUnit = TimeUnit.SECONDS)
+  @Fork(1)
+  @Threads(2)
+  def validateReactiveJustRead(state: TokensState, blackhole: Blackhole): Unit = {
+    val numTokens = state.validateBatch(3)
+    blackhole.consume(numTokens)
+  }
+
+  @Benchmark
+  @BenchmarkMode(Array(Mode.Throughput))
+  @OutputTimeUnit(TimeUnit.SECONDS)
+  @Warmup(iterations = 1, time = 5, timeUnit = TimeUnit.SECONDS)
+  @Measurement(iterations = 10, time = 10, timeUnit = TimeUnit.SECONDS)
+  @Fork(1)
+  @Threads(2)
+  def validateReactive(state: TokensState, blackhole: Blackhole): Unit = {
+    val numTokens = state.validateBatch(4)
+    blackhole.consume(numTokens)
+  }
 //
 //  @Benchmark
 //  @BenchmarkMode(Array(Mode.Throughput))

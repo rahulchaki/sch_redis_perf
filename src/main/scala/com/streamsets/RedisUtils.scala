@@ -2,6 +2,7 @@ package com.streamsets
 
 import org.redisson.Redisson
 import org.redisson.api.RedissonClient
+import org.redisson.client.codec.StringCodec
 import org.redisson.config.{Config, ReadMode}
 import org.redisson.connection.balancer.RoundRobinLoadBalancer
 
@@ -41,4 +42,16 @@ object RedisUtils {
     Redisson.create(config)
   }
 
+  def isReactiveEager(): Unit = {
+    val conf = Settings.load()
+    val redisson = RedisUtils.setUpRedisson(conf)
+    val mR = redisson.reactive().getMap[String, String]("abc", StringCodec.INSTANCE)
+    mR.put("key", "value")//.toFuture.get()
+    println(mR.get("key").toFuture.get())
+  }
+
+}
+
+object RedisIsEagerTest extends App{
+  RedisUtils.isReactiveEager()
 }

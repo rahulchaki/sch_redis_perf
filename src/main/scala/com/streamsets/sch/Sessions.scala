@@ -1,8 +1,9 @@
 package com.streamsets.sch
 
+import com.streamsets.{RedisUtils, Settings}
 import org.apache.commons.codec.digest.DigestUtils
 
-import java.util.concurrent.{CompletableFuture, Executor}
+import java.util.concurrent.{CompletableFuture, Executor, Executors}
 
 
 class SessionsManager(
@@ -59,7 +60,7 @@ class SessionsManager(
 object SessionsManager {
   def test(sessionManager: SessionsManager): Unit = {
     println(" Testing sch redis............ ")
-    val tokens = sessionManager.createSessions(100, 60000)
+    val tokens = sessionManager.createSessions(5, 60000)
     println(s" Created  ${tokens.size} tokens " )
     tokens.foreach{ token =>
       val principal = sessionManager.validateAsync(token).get()
@@ -81,4 +82,16 @@ object SessionsManager {
     println(s"Created ${tokens.size} tokens in ${System.currentTimeMillis() - time} ms.")
     tokens
   }
+}
+
+object CreateTokens extends App {
+  val conf = Settings.load()
+  val redisson = RedisUtils.setUpRedisson(conf)
+  val dbExecutor = Executors.newFixedThreadPool( conf.sch.dbIOThreads )
+  val sessionsCache = new RedisSessionsCacheManager(redisson)
+  val sessions = new SessionsManager(sessionsCache, Some(dbExecutor))
+  SessionsManager.test(sessions)
+  redisson.getKeys.flushall()
+  SessionsManager.createTokens( 1_000_000, 10_000, sessions )
+  redisson.shutdown()
 }

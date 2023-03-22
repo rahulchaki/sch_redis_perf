@@ -1,15 +1,13 @@
 package com.streamsets
 
-import com.streamsets.sch.{RedisSessionsCacheManager, SSOPrincipal, SessionsManager}
+import com.streamsets.sch.RedisEntry
 import org.openjdk.jmh.annotations._
 import org.openjdk.jmh.infra.Blackhole
-import org.redisson.api.RedissonClient
+import org.redisson.client.codec.StringCodec
 import reactor.core.publisher.{Flux, Mono}
 
-import java.nio.file.{Files, Paths}
-import java.util
-import java.util.concurrent.{Executors, ThreadLocalRandom, TimeUnit}
-import scala.io.Source
+import java.util.concurrent.{CompletableFuture, ThreadLocalRandom, TimeUnit}
+import java.{lang, util}
 import scala.jdk.CollectionConverters._
 
 
@@ -17,59 +15,20 @@ import scala.jdk.CollectionConverters._
 class TokensState {
 
   val conf = Settings.load()
-  val dbExecutor = Executors.newFixedThreadPool( conf.sch.dbIOThreads )
-  val redisson = setUpRedisson()
-  val sessionManager = setUpSessionsManager()
+  val redisson = RedisUtils.setUpRedisson(conf)
+
   val tokens = new util.ArrayList[String]()
 
   val numTokens = 1_000_000
   val batchSize = 10_000
 
-  def setUpRedisson(): RedissonClient = {
-    val redisson = RedisUtils.setUpRedisson(conf)
-    redisson.getKeys.flushall();
-    redisson
-  }
-
-
-  def setUpSessionsManager(): SessionsManager = {
-    val sessionsCache = new RedisSessionsCacheManager( redisson )
-    new SessionsManager(sessionsCache, Some(dbExecutor))
-  }
-
-  def createTokens(): List[String] = {
-    redisson.getKeys.flushall()
-    SessionsManager.createTokens( numTokens, batchSize, sessionManager )
-  }
-
   @Setup(Level.Trial)
   def setup(): Unit = {
-    SessionsManager.test( sessionManager )
-    val forceCreate = true
     val now = System.currentTimeMillis()
-    val del = "###"
-    val keys = if (forceCreate) {
-      createTokens()
-    }
-    else {
-      if (Files.exists(Paths.get("tokens.list"))) {
-        println("Loading tokens from file.")
-        val all = Source.fromFile("tokens.list").mkString.split(del).toList
-        println(s"Loaded ${all.size} tokens from file in ${System.currentTimeMillis() - now} ms.")
-        all
-      } else {
-        println("Fetching tokens from Redis.")
-        val redisTokens = sessionManager.allTokens()
-        val all = if( redisTokens.isEmpty )
-          createTokens()
-        else redisTokens.toList
-        Files.writeString(Paths.get("tokens.list"), all.mkString(del))
-        println(s"Fetched ${all.size} tokens from Redis in ${System.currentTimeMillis() - now} ms.")
-        all
-      }
-    }
-    tokens.addAll(keys.asJava)
-
+    println("Fetching tokens from Redis.")
+    val tokensRedis = redisson.reactive().getKeys.getKeys(1000).collectList().toFuture.get().asScala.toSet
+    println(s" Fetched ${tokensRedis.size} tokens from Redis in ${System.currentTimeMillis() - now }")
+    tokens.addAll(tokensRedis.asJava)
   }
 
   @TearDown(Level.Trial)
@@ -77,20 +36,54 @@ class TokensState {
     println("Shutting down Redisson ")
     redisson.shutdown()
   }
-
-  def validate(): Option[SSOPrincipal] = {
-    val index = ThreadLocalRandom.current().nextInt(numTokens)
-    sessionManager.validateAsync(tokens.get(index)).get()
+  def validateInnerAsync( token: String  ): CompletableFuture[lang.Boolean] = {
+    val newHandler = redisson.getMap[String, AnyRef]( token, StringCodec.INSTANCE )
+    newHandler.readAllMapAsync()
+      .toCompletableFuture
+      .thenCompose{ _ =>
+        newHandler
+          .fastPutAsync( RedisEntry.LAST_ACTIVITY_AT, java.lang.Long.valueOf(System.currentTimeMillis()))
+      }
   }
 
-  def validateAsync(): Int = {
-    val batch = ThreadLocalRandom.current().nextInt( numTokens / batchSize)
+  def validateInnerReactive(token: String): Mono[lang.Boolean] = {
+    val newHandler = redisson.reactive().getMap[String, AnyRef](token, StringCodec.INSTANCE)
+    newHandler.readAllMap()
+      .flatMap { _ =>
+        newHandler.fastPut(RedisEntry.LAST_ACTIVITY_AT, java.lang.Long.valueOf(System.currentTimeMillis()))
+      }
+  }
+
+  def validateInnerSync(token: String): lang.Boolean = {
+    val newHandler = redisson.getMap[String, AnyRef](token, StringCodec.INSTANCE)
+    val data = newHandler.readAllMap()
+    val result = newHandler.fastPut(RedisEntry.LAST_ACTIVITY_AT, java.lang.Long.valueOf(System.currentTimeMillis()))
+    java.lang.Boolean.valueOf(data.size() > 0 && result)
+  }
+
+  def wrapValidateInnerAsMono( token: String, which: Int ): Mono[lang.Boolean] = {
+    which match {
+      case 0 => Mono.fromFuture( ()=> validateInnerAsync(token ) )
+      case 1 => validateInnerReactive( token )
+      case 2 => Mono.just( validateInnerSync( token ) )
+    }
+  }
+  def validateBatch( which: Int ): Int = {
+    val batch = ThreadLocalRandom.current().nextInt(numTokens / batchSize)
     Flux.fromIterable(tokens.asScala.slice(batch * batchSize, batch * batchSize + batchSize).toList.asJava)
-      .flatMap(token => Mono.fromFuture( () => sessionManager.validateAsync(token) ) )
+      .flatMap(
+        token => wrapValidateInnerAsMono( token, which),
+        conf.redis.threads
+      )
       .collectList()
       .toFuture
       .get()
       .size()
+  }
+
+  def validateSync(): lang.Boolean = {
+    val index = ThreadLocalRandom.current().nextInt(numTokens)
+    validateInnerSync( tokens.get( index ) )
   }
 
 }
@@ -104,11 +97,23 @@ class JMHBenchmarks {
   @Warmup(iterations = 1, time = 5, timeUnit = TimeUnit.SECONDS)
   @Measurement(iterations = 10, time = 10, timeUnit = TimeUnit.SECONDS)
   @Fork(1)
-  @Threads(1)
+  @Threads(2)
   def validateAsync(state: TokensState, blackhole: Blackhole): Unit = {
-    val numTokens = state.validateAsync()
+    val numTokens = state.validateBatch(0)
     blackhole.consume(numTokens)
   }
+//
+//  @Benchmark
+//  @BenchmarkMode(Array(Mode.Throughput))
+//  @OutputTimeUnit(TimeUnit.SECONDS)
+//  @Warmup(iterations = 1, time = 5, timeUnit = TimeUnit.SECONDS)
+//  @Measurement(iterations = 10, time = 10, timeUnit = TimeUnit.SECONDS)
+//  @Fork(1)
+//  @Threads(2)
+//  def validateReactive(state: TokensState, blackhole: Blackhole): Unit = {
+//    val numTokens = state.validateBatch(1)
+//    blackhole.consume(numTokens)
+//  }
 //
 //  @Benchmark
 //  @BenchmarkMode(Array(Mode.Throughput))
@@ -116,12 +121,11 @@ class JMHBenchmarks {
 //  @Warmup(iterations = 1, time = 5, timeUnit = TimeUnit.SECONDS)
 //  @Measurement(iterations = 10, time = 10, timeUnit = TimeUnit.SECONDS)
 //  @Fork(1)
-//  @Threads(64)
-//  def validate(state: TokensState, blackhole: Blackhole): Unit = {
-//    blackhole.consume(
-//      state.validate()
-//    )
+//  @Threads(128)
+//  def validateSync(state: TokensState, blackhole: Blackhole): Unit = {
+//    blackhole.consume( state.validateSync() )
 //  }
+
 
 
 }

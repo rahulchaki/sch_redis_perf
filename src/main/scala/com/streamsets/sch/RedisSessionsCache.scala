@@ -12,8 +12,8 @@ import scala.jdk.CollectionConverters._
 class RedisSessionsCacheManager( redisson: RedissonClient ) {
 
   private def newHandler( sessionHashId: String ) = new RedisTokenHandler( redisson.getMap[String, AnyRef]( sessionHashId, StringCodec.INSTANCE ) )
-  def allTokens(): Set[String] = redisson
-    .getKeys.getKeys(1000).asScala.toSet
+  def allTokens(): Set[String] = redisson.reactive()
+    .getKeys.getKeys(1000).collectList().toFuture.get().asScala.toSet
 
   def cacheAll(sessions: Map[String, SSOPrincipal]): Unit = {
     val batch = redisson.createBatch(

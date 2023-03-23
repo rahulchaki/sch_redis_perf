@@ -92,6 +92,13 @@ object CreateTokens extends App {
   testMap.put("key", "value")
   val value = testMap.get("key")
   println( s"Read $value from map test_map")
+  val batch = redisson.createBatch()
+  batch.getMap[String, String]("test_map_1", StringCodec.INSTANCE).putAsync("key", "va;ue1")
+  batch.getMap[String, String]("test_map_2", StringCodec.INSTANCE).putAsync("key", "va;ue2")
+  batch.execute().getResponses
+  val value1 = redisson.getMap[String, String]("test_map_1", StringCodec.INSTANCE).get( "key")
+  val value2 = redisson.getMap[String, String]("test_map_2", StringCodec.INSTANCE).get( "key")
+  println( s"Read $value1 $value2  created using batch")
   val dbExecutor = Executors.newFixedThreadPool( conf.sch.dbIOThreads )
   val sessionsCache = new RedisSessionsCacheManager(redisson)
   val sessions = new SessionsManager(sessionsCache, Some(dbExecutor))

@@ -16,11 +16,7 @@ class RedisSessionsCacheManager( redisson: RedissonClient ) {
     .getKeys.getKeys(1000).collectList().toFuture.get().asScala.toSet
 
   def cacheAll(sessions: Map[String, SSOPrincipal]): Unit = {
-    val batch = redisson.createBatch(
-      BatchOptions.defaults()
-        .skipResult()
-        //.syncSlaves(1, 1, TimeUnit.MINUTES)
-    )
+    val batch = redisson.createBatch()
     sessions.foreach {
       case (sessionHashId, principal) =>
         val handler = batch.getMap[String, AnyRef](sessionHashId, StringCodec.INSTANCE)

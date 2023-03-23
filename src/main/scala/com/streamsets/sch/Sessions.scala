@@ -2,6 +2,7 @@ package com.streamsets.sch
 
 import com.streamsets.{RedisUtils, Settings}
 import org.apache.commons.codec.digest.DigestUtils
+import org.redisson.client.codec.StringCodec
 
 import java.util.concurrent.{CompletableFuture, Executor, Executors}
 
@@ -87,6 +88,10 @@ object SessionsManager {
 object CreateTokens extends App {
   val conf = Settings.load()
   val redisson = RedisUtils.setUpRedisson(conf)
+  val testMap = redisson.getMap[String, String]("test_map", StringCodec.INSTANCE)
+  testMap.put("key", "value")
+  val value = testMap.get("key")
+  println( s"Read $value from map test_map")
   val dbExecutor = Executors.newFixedThreadPool( conf.sch.dbIOThreads )
   val sessionsCache = new RedisSessionsCacheManager(redisson)
   val sessions = new SessionsManager(sessionsCache, Some(dbExecutor))

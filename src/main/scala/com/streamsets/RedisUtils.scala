@@ -42,6 +42,18 @@ object RedisUtils {
     Redisson.create(config)
   }
 
+  def justRedisMaster( conf: AppConf ): RedissonClient = {
+    val config = new Config
+    val redis = conf.redis
+    config
+      .setNettyThreads(conf.redis.threads)
+      .useSingleServer
+      .setAddress("redis://" + redis.primary)
+      .setConnectionMinimumIdleSize(redis.pool / 2)
+      .setConnectionPoolSize(redis.pool)
+    Redisson.create(config)
+  }
+
   def isReactiveEager(): Unit = {
     val conf = Settings.load()
     val redisson = RedisUtils.setUpRedisson(conf)

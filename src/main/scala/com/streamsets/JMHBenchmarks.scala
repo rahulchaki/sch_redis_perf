@@ -3,6 +3,7 @@ package com.streamsets
 import com.streamsets.sch.RedisEntry
 import org.openjdk.jmh.annotations._
 import org.openjdk.jmh.infra.Blackhole
+import org.redisson.api.RedissonClient
 import org.redisson.client.codec.StringCodec
 import reactor.core.publisher.{Flux, Mono}
 
@@ -15,7 +16,7 @@ import scala.jdk.CollectionConverters._
 class TokensState {
 
   val conf = Settings.load()
-  val redisson = RedisUtils.setUpRedisson(conf)
+  var redisson: RedissonClient
 
   val tokens = new util.ArrayList[String]()
 
@@ -26,8 +27,12 @@ class TokensState {
   def setup(): Unit = {
     val now = System.currentTimeMillis()
     println("Fetching tokens from Redis.")
-    val tokensRedis = redisson.reactive().getKeys.getKeys(1000).collectList().toFuture.get().asScala.toSet
+    val redisMaster = RedisUtils.justRedisMaster( conf )
+    val tokensRedis = redisMaster.reactive().getKeys.getKeys(1000).collectList().toFuture.get().asScala.toSet
     println(s" Fetched ${tokensRedis.size} tokens from Redis in ${System.currentTimeMillis() - now }")
+    redisMaster.shutdown()
+    println("Shutting down redis master and launching master slave config")
+    redisson = RedisUtils.setUpRedisson(conf)
     tokens.addAll(tokensRedis.asJava)
   }
 

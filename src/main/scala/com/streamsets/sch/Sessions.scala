@@ -105,5 +105,6 @@ object CreateTokens extends App {
   SessionsManager.test(sessions)
   redisson.getKeys.flushall()
   SessionsManager.createTokens( 1_000_000, 10_000, sessions )
+  Thread.sleep( 10_000)
   redisson.shutdown()
 }

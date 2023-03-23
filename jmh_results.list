@@ -1,0 +1,21 @@
+[info] Benchmark                                  Mode  Cnt  Score   Error  Units
+[info] JMHBenchmarks.validateReactive            thrpt   10  1.267 ± 0.061  ops/s
+[info] JMHBenchmarks.validateReactiveConcurrent  thrpt   10  0.913 ± 0.039  ops/s
+[info] JMHBenchmarks.validateReactiveJustRead    thrpt   10  3.001 ± 0.122  ops/s
+
+
+[info] Benchmark                                  Mode  Cnt  Score   Error  Units
+[info] JMHBenchmarks.validateReactive            thrpt   10  1.245 ± 0.094  ops/s
+[info] JMHBenchmarks.validateReactiveConcurrent  thrpt   10  0.903 ± 0.028  ops/s
+[info] JMHBenchmarks.validateReactiveJustRead    thrpt   10  2.951 ± 0.119  ops/s
+
+[info] Benchmark                                  Mode  Cnt  Score   Error  Units
+[info] JMHBenchmarks.validateReactive            thrpt   10  1.251 ± 0.094  ops/s
+[info] JMHBenchmarks.validateReactiveConcurrent  thrpt   10  0.917 ± 0.050  ops/s
+[info] JMHBenchmarks.validateReactiveJustRead    thrpt   10  2.955 ± 0.137  ops/s
+
+
+[info] Benchmark                                  Mode  Cnt  Score   Error  Units
+[info] JMHBenchmarks.validateReactive            thrpt   10  1.274 ± 0.097  ops/s
+[info] JMHBenchmarks.validateReactiveConcurrent  thrpt   10  0.961 ± 0.193  ops/s
+[info] JMHBenchmarks.validateReactiveJustRead    thrpt   10  2.970 ± 0.123  ops/s

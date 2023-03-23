@@ -19,7 +19,7 @@ class RedisSessionsCacheManager( redisson: RedissonClient ) {
     val batch = redisson.createBatch(
       BatchOptions.defaults()
         .skipResult()
-        .syncSlaves(1, 1, TimeUnit.MINUTES)
+        //.syncSlaves(1, 1, TimeUnit.MINUTES)
     )
     sessions.foreach {
       case (sessionHashId, principal) =>

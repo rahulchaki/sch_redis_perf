@@ -16,7 +16,7 @@ import scala.jdk.CollectionConverters._
 class TokensState {
 
   val conf = Settings.load()
-  var redisson: RedissonClient
+  var redisson: RedissonClient = _
 
   val tokens = new util.ArrayList[String]()
 

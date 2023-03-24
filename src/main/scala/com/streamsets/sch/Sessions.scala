@@ -34,12 +34,12 @@ class SessionsManager(
 
     def validateFromDB( sessionHashId: String ): Option[ SSOPrincipal ] = {
       println(s"XXXXXXXXXXXXXXXXXXXXX  validateFromDB called for token $sessionHashId. This will block for 200 ms. ")
-      Thread.sleep(200)
+      //Thread.sleep(200)
       Some(SSOPrincipal.newPrincipal(0))
     }
     def updateMainDB(sessionHashId: String): Boolean = {
       println(s"XXXXXXXXXXXXXXXXXXXXX  updateMainDB called for token $sessionHashId. This will block for 200 ms. ")
-      Thread.sleep(200)
+      //Thread.sleep(200)
       true
     }
 

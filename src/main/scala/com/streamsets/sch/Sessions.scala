@@ -68,6 +68,7 @@ object SessionsManager {
       println(" Validated token with result " + principal.isDefined)
       val tokenStr = principal.map(_.token).getOrElse("")
       println(s" Token : $token  tokenStr $tokenStr result ${DigestUtils.sha256Hex(tokenStr).equals(token)}")
+      println(s"principal $principal")
       val result = sessionManager.invalidate(token)
       println(" Invalidated token with result " + result)
     }

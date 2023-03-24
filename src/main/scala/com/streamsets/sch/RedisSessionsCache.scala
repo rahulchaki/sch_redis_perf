@@ -1,12 +1,12 @@
 package com.streamsets.sch
 
 import com.streamsets.{RedisUtils, Settings}
-import org.redisson.api.{BatchOptions, RMap, RedissonClient}
+import org.redisson.api.{RMap, RedissonClient}
 import org.redisson.client.codec.StringCodec
 import reactor.core.publisher.{Flux, Mono}
 
 import java.time.Duration
-import java.util.concurrent.{CompletableFuture, TimeUnit}
+import java.util.concurrent.CompletableFuture
 import scala.jdk.CollectionConverters._
 
 class RedisSessionsCacheManager( redisson: RedissonClient ) {
@@ -146,7 +146,7 @@ class RedisTokenHandler( redis: RMap[ String, AnyRef ] ) {
   }
 
   def invalidate(): Boolean = {
-    val isExpired = redis.expire( Duration.ofSeconds(5) )
+    val isExpired = redis.expire( Duration.ofSeconds(60) )
     redis.fastPut(RedisEntry.IS_INVALID, java.lang.Boolean.TRUE)
     isExpired
   }

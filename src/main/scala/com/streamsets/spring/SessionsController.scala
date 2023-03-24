@@ -18,9 +18,12 @@ class SessionsController {
     Mono.just(this.sessionManager.createSessions(1, expiresIn).head)
 
   @PostMapping(Array("/validate"))
-  private def validate(@RequestParam("token") token: String): Mono[ Optional[SSOPrincipal] ] = {
+  private def validate(@RequestParam("token") token: String): Mono[ String ] = {
     Mono.fromFuture( this.sessionManager.validateAsync(token) )
-      .map( _.toJava)
+      .map{
+        case Some( principal ) => SSOPrincipal.serialize( principal )
+        case None => "null"
+      }
   }
 
   @PostMapping(Array("/invalidate"))
